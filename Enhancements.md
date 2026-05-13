@@ -43,6 +43,23 @@ The common SpacetimeDB browser-client pattern is powerful, but some SaaS teams n
 - SpacetimeDB generated TypeScript/Node SDK from the server side, connected over WSS.
 - SSE from the application server to the browser for live UI updates.
 
+## Enterprise Identity And Federation Use Case
+
+Many SaaS applications eventually need WorkOS-like enterprise identity features: customer-managed SSO, SCIM or directory sync, verified domains, delegated customer identity admins, customer OAuth clients, and support for IdPs such as Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0, or hosted enterprise identity services. This should remain an application-owned identity plane rather than becoming a SpacetimeDB-specific concern.
+
+The useful SpacetimeDB guidance is how to keep that provider complexity on the application side while still giving reducers stable, auditable identity. A common app-side model includes provider adapter records, enterprise SSO connection records, directory sync connection records, federated identity links, customer identity admin grants, OAuth client application records, and delegated browser token events. The provider adapter can be Better Auth SSO/SCIM, WorkOS, Keycloak, Auth0, Entra, Google Workspace, or a custom OIDC/SAML bridge, but those adapters should all normalize into the same application actor, tenant, membership, and token-broker model.
+
+Better Auth's Organization, OAuth Provider, SSO, and SCIM plugins fit this architecture as self-hosted primitives:
+
+- `organization` owns tenant boundaries, active organization context, roles, permissions, and customer admin surfaces.
+- `oauthProvider` can issue audience-scoped JWT access tokens for SpacetimeDB when clients request the right `resource`.
+- `sso` can accept OIDC, OAuth2, or SAML sign-in from enterprise identity providers after domain and metadata checks.
+- `scim` can receive directory provisioning input, scoped to an organization, without turning SCIM bearer tokens into SpacetimeDB credentials.
+
+Hosted enterprise identity vendors still fit as adapters. They may provide faster SSO/SCIM onboarding, admin portals, provider catalogs, audit products, or directory event handling. The important boundary is that SpacetimeDB receives a short-lived JWT minted after the application has normalized the provider result and authorized the actor. SpacetimeDB modules should not need raw IdP assertions, raw SCIM payloads, long-lived SCIM bearer tokens, provider admin API keys, or provider-specific callbacks.
+
+Docs and examples would be stronger if they showed this adapter pattern explicitly. They should explain that changing from Keycloak to Better Auth, or from self-hosted Better Auth plugins to a hosted WorkOS-style adapter, should not require rewriting reducer authorization. The risky migration surface is issuer/subject identity continuity, federated identity links, token audience/algorithm compatibility, and module-local authorization state.
+
 ## Framework Shape
 
 The requested pattern should not be locked to one frontend framework. The important boundary is server-side ownership of the SpacetimeDB connection and browser delivery over normal HTTP streams.
@@ -165,7 +182,7 @@ The docs should emphasize that this token is not the web session. It is a short-
 
 ### 5. Better Auth Specific Guide
 
-Better Auth has two relevant paths that SpacetimeDB docs could explain.
+Better Auth has several relevant paths that SpacetimeDB docs could explain.
 
 Custom broker mode:
 
@@ -186,6 +203,15 @@ Specific documentation gaps:
 - How to configure `issuer`, `audience` or `validAudiences`, `expirationTime`, and `jwksPath`.
 - How to expose `/.well-known/openid-configuration` and `/jwks` when auth is mounted under an app path such as `/api/auth`.
 - How to project Better Auth organization membership into small JWT claims and keep mutable authorization in SpacetimeDB tables.
+
+Organization, SSO, SCIM, and enterprise federation mode:
+
+- Better Auth Organization can model tenant membership, roles, permissions, and customer admin boundaries before a SpacetimeDB token is minted.
+- Better Auth SSO can normalize enterprise OIDC, OAuth2, and SAML providers such as Microsoft Entra ID and Google Workspace into app-owned users and organizations.
+- Better Auth SCIM can receive directory provisioning input, but SCIM bearer tokens should stay app-side and should never be treated as SpacetimeDB credentials.
+- Hosted enterprise identity vendors such as WorkOS should be documented as alternate provider adapters, not as canonical SpacetimeDB identity authorities.
+- Docs should encourage durable federated identity links based on issuer plus subject, not email-only or domain-only matching.
+- Reducers should treat SSO provider IDs, verified domains, SCIM membership, and OAuth client IDs as inputs that still require tenant-scoped authorization checks.
 
 ### 6. Keycloak Exit And Identity Migration Guide
 
@@ -286,6 +312,7 @@ This architecture supports:
 
 - Multi-tenant operator dashboards.
 - Customer portals with restricted views over shared domain data.
+- WorkOS-like enterprise identity setup where customers federate with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0, Better Auth plugins, or hosted SSO/SCIM adapters.
 - Document, workflow, and journal-style applications that need low-latency updates and audited writes.
 - Admin impersonation with explicit grants and audit records.
 - Customer-managed API keys and server-to-server integrations.
@@ -304,14 +331,17 @@ This architecture supports:
 8. Can docs include a Better Auth example alongside Auth0, Clerk, and generic OIDC?
 9. Can examples include both React/TanStack Start and Angular/Analog variants, or at least keep the server gateway pattern framework-neutral?
 10. Can examples include CLI-invoked tests that exercise the gateway without a browser?
+11. Can docs include an enterprise identity adapter cookbook that treats Better Auth SSO/SCIM, WorkOS-style hosted identity, Microsoft Entra ID, Google Workspace, Keycloak, Auth0, and custom OIDC/SAML as app-side adapters?
+12. What SpacetimeDB guidance is recommended for issuer/subject continuity when a tenant moves from one enterprise identity adapter to another?
 
 ## Suggested Priority
 
 1. Document server-side TypeScript SDK support and connection lifecycle.
 2. Add an app-owned auth broker guide with Better Auth examples.
-3. Add a server gateway plus SSE relay example.
-4. Add Keycloak/OIDC migration documentation.
-5. Add token diagnostics for issuer, subject, audience, algorithm, and JWKS.
-6. Add multi-tenant authorization and robot actor cookbooks.
+3. Add an enterprise identity adapter cookbook covering Better Auth SSO/SCIM and WorkOS-style hosted provider choices.
+4. Add a server gateway plus SSE relay example.
+5. Add Keycloak/OIDC migration documentation.
+6. Add token diagnostics for issuer, subject, audience, algorithm, and JWKS.
+7. Add multi-tenant authorization and robot actor cookbooks.
 
 SpacetimeDB already has the core primitives we need: reducers, subscriptions, OIDC/JWT identity, private tables, views, and generated clients. The main request is to make this server-side gateway architecture obvious, documented, and supported enough that SaaS teams can adopt it without inventing the auth and realtime bridge from scratch.
